@@ -1,2 +1,3 @@
 This is very good demo of how to use the github feature.
 You can modify this Now I try to create some conflicts.
+Hallo allemaal. Daniel has created some conflicts here!
