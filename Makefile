@@ -2,7 +2,7 @@
 NAME = ex00
 
 CXX = c++
-CXXFLAGS = -Wall -Wextra -Werror -std=c++98
+CXXFLAGS = -Wall -Wextra -Werror -std=c++11
 
 SRCS = main.cpp
 OBJS = $(SRCS:.cpp=.o)
