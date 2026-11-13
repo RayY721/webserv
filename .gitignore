@@ -6,3 +6,6 @@
 
 # VS Code
 .vscode/
+
+# tests
+__pycache__/
