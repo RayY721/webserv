@@ -1,4 +1,3 @@
-
 NAME = webserv
 
 CXX = c++
