@@ -81,8 +81,20 @@ contract. Record each decision in the directive table and example config.
    stripping the prefix.
 6. Do `root` and `index` inherit from `server` into a `location`? Which
    directives may be set at both levels, and how does an override work?
+
+   **Proposed (C):** Only `root` and `index` may appear in both `server` and
+   `location`. A value set in a `location` overrides the server's, and if it
+   is absent the location uses the server's value. `listen`, `error_page` and
+   `client_max_body_size` are server-only. `methods`, `autoindex`, `return`,
+   `upload_store` and `cgi` are location-only. Putting any directive at the
+   wrong level is a config error.
 7. What are the default accepted methods and default `autoindex` value?
    Which status is sent for a method excluded by `methods`?
+
+   **Proposed (C):** If `methods` is absent, the location allows only `GET`.
+   `autoindex` defaults to `off`. A request whose method is not in the list
+   gets `405 Method Not Allowed` with an `Allow` header listing the allowed
+   methods (HTTP requires that header on a 405).
 8. If `return` is set, does it take precedence over static files, uploads,
    and CGI? Which redirect statuses and target forms are supported?
 9. Is `upload_store` alone enough to enable uploads? How are upload filenames
