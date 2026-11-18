@@ -17,10 +17,10 @@ class ServerConfig;
 // See "Client states" in the sprint plan.
 enum class ClientState
 {
-	ReadingRequest,		// Wait for POLLIN until the request is complete. Next: Processing
+	ReadingRequest,		// Wait for POLLIN until the request is complete.	Next: Processing
 	Processing,			// B builds the Response. No socket I/O.			Next: WritingResponse or WaitingCgi
 	WaitingCgi,			// Wait on the CGI pipes, not on this socket.		Next: WritingResponse
-	WritingResponse,	// Wait for POLLOUT until every byte is sent. 	Next: Closing, or ReadingRequest (keep-alive)
+	WritingResponse,	// Wait for POLLOUT until every byte is sent.		Next: Closing, or ReadingRequest (keep-alive)
 	Closing				// Nothing to wait for: the loop removes the client.
 };
 
@@ -41,6 +41,7 @@ public:
 	Client(int fd, const ServerConfig* server);
 	~Client();
 
+	// One fd, one owner. A copy would close the socket twice, and the second close could hit another client's fd.
 	Client(const Client&) = delete;
 	Client& operator=(const Client&) = delete;
 
