@@ -3,7 +3,7 @@
 This is a discussion draft for issue #9. It describes the syntax used by
 `conf/default.conf` so that the listening-socket code (A), HTTP/route code
 (B), and config/CGI code (C) can agree on one contract before the parser is
-implemented. **Proposed** behavior below is not final until A and B review it.
+implemented. **Working decisions** below summarize A and B's PR replies; C's answers are proposals until the team confirms them.
 At this stage, the goal is to agree on the format. The server, parser, sample
 website, and CGI program are not ready, so this draft is not intended to run
 or be tested yet.
@@ -36,11 +36,11 @@ used when no argument is supplied is still to be decided.
 
 The table gives **proposed** syntax and meaning. `server` means the rule
 applies to that server block; `location` means it applies to matching requests.
-The exact defaults and inheritance rules remain review questions.
+The table is a quick reference; the detailed rules and remaining decisions are recorded below.
 
 | Directive | Proposed scope and syntax | Intended meaning | Example |
 | --- | --- | --- | --- |
-| `listen` | `server`: `listen <IPv4-address>:<port>;` | Open a listening socket for an interface/port pair. Repeat for more pairs if agreed. | `listen 127.0.0.1:8080;` |
+| `listen` | `server`: `listen <IPv4-address-or-localhost>:<port>;` or `listen <port>;` | Open an IPv4 listener; a bare port means `0.0.0.0:<port>`. A server may have several nonconflicting listeners. | `listen 127.0.0.1:8080;` |
 | `root` | `server` or `location`: `root <directory>;` | Directory from which static URL paths are resolved. A location value overrides the server value. | `root ./www/site-a;` |
 | `index` | `server` or `location`: `index <filename>;` | File to try when the mapped URL is a directory. | `index index.html;` |
 | `error_page` | `server`: `error_page <status> <file>;` | Custom response file for that HTTP error status; otherwise use a built-in page. May repeat for different statuses. | `error_page 404 ./www/errors/404.html;` |
@@ -56,10 +56,84 @@ two listening ports, static files, a redirect, an upload route, and one CGI
 type. Its paths are placeholders for discussing the intended format; they do
 not imply that the files or directories exist yet.
 
-## Questions for A and B to decide in the PR
+## Working decisions from the PR discussion
 
-Please answer these before treating the syntax or sample as an implementation
-contract. Record each decision in the directive table and example config.
+These are A and B's written answers, recorded here for the team to confirm at
+the next meeting. They describe intended behavior, not tested implementation.
+
+### A — listeners (questions 1–3)
+
+- `listen` accepts a dotted IPv4 address or `localhost` plus a port, or a bare
+  port meaning `0.0.0.0:<port>`. `0.0.0.0` means every IPv4 interface. No IPv6
+  is planned. Ports must be whole numbers from 1 to 65535. C stores host and
+  port; A resolves them with `getaddrinfo` using `AF_INET` and `AI_PASSIVE`.
+- A server may have multiple listeners. A resolved address/port collision
+  anywhere in the file is a config error; a wildcard listener conflicts with
+  any listener on the same port. Each listening socket belongs to exactly one
+  server, selected by listening fd rather than the HTTP `Host` header.
+- If any bind fails, startup fails with a useful host/port error, closes
+  sockets already opened, and exits non-zero. The server must not run with
+  only some configured listeners.
+
+### B — routes and responses (questions 4–10)
+
+- `location` matches a URI path prefix at a segment boundary: `/images`
+  matches `/images` and `/images/a.png`, but not `/images-old/a.png`. The
+  longest matching location wins.
+- Remove the matching location prefix before joining the remainder to its
+  `root`: `/images/a.png` with `root ./www/img` maps to `./www/img/a.png`.
+  Joining must produce exactly one separator. This `root` behavior resembles
+  NGINX `alias` rather than NGINX `root`.
+- Only `root` and `index` may appear at both server and location levels;
+  a location value overrides the inherited server value. `listen`,
+  `error_page`, and `client_max_body_size` are server-only. `methods`,
+  `autoindex`, `return`, `upload_store`, and `cgi` are location-only.
+- Absent `methods` means GET only; absent `autoindex` means off. A disallowed
+  method gets 405 with an `Allow` header listing permitted methods.
+- `return` takes precedence over file serving, uploads, and CGI. Supported
+  redirect codes are 301, 302, 303, 307, and 308; other codes are a config
+  error. The target is copied to `Location` as a path or full URL.
+- Uploads require both `upload_store` and POST in `methods`; POST creates a
+  file and returns 201. B proposes a form filename, or the final URI segment
+  for a raw body, and replacement of an existing file. **Still discuss**
+  filename sanitization, URL decoding, and overwrite policy before treating
+  this as a safe file-writing rule.
+- A request runs as CGI when its script extension matches `cgi` in the
+  selected location and its method is GET or POST and permitted by `methods`.
+  Other files are served normally; DELETE does not run CGI. The CGI working
+  directory is the script's own directory.
+
+### C — parser and configuration (questions 11–16)
+
+- **Proposal:** Resolve relative paths against the config file's directory,
+  so launching from another working directory does not change their meaning.
+  If accepted, the `./www/...` paths in `conf/default.conf` need to become
+  `../www/...` before that file is runnable. **Decision still needed:** choose
+  config-directory or launch-directory relative paths.
+- **Proposal:** Accept positive decimal byte counts only, with no size
+  suffixes; reject zero, signs, non-digits, and overflow. Default
+  `client_max_body_size` to 1 MiB (1,048,576 bytes) per server, as in the
+  provisional C2 header. B returns 413 for an oversized request.
+- **Proposal:** Parse the whole file before opening listeners. Reject unknown
+  or misplaced directives, wrong argument counts, malformed values, unmatched
+  braces, duplicate single-value directives, and duplicate keyed entries.
+  Permit repeated `listen`, and distinct `error_page` status codes and `cgi`
+  extensions. Require a nonempty server block; report `path:line: reason` and
+  exit non-zero on a config error. **Decision still needed:** require an
+  explicit `listen`, or keep C2's provisional `127.0.0.1:8080` fallback.
+- **Proposal:** Support whitespace, braces, semicolons, unquoted tokens, and
+  `#` comments to end of line. Reject quoting and escaping for now, and
+  document that paths and targets cannot contain spaces.
+- **Proposal:** With no argument, load `conf/default.conf`; an explicit
+  argument selects another config file. Missing/unreadable config is a
+  startup error.
+- **Proposal:** Assign owners for later demo files and directories. Their
+  absence does not block agreement on this format.
+
+The original questions are kept below as the meeting agenda. Confirm or
+revise the working decisions above, and record any deferred item with an owner.
+
+## Questions for the team to confirm
 
 ### A — listening sockets and server selection
 
@@ -82,7 +156,7 @@ contract. Record each decision in the directive table and example config.
 6. Do `root` and `index` inherit from `server` into a `location`? Which
    directives may be set at both levels, and how does an override work?
 
-   **Proposed (C):** Only `root` and `index` may appear in both `server` and
+   **Working answer (B and C):** Only `root` and `index` may appear in both `server` and
    `location`. A value set in a `location` overrides the server's, and if it
    is absent the location uses the server's value. `listen`, `error_page` and
    `client_max_body_size` are server-only. `methods`, `autoindex`, `return`,
@@ -91,7 +165,7 @@ contract. Record each decision in the directive table and example config.
 7. What are the default accepted methods and default `autoindex` value?
    Which status is sent for a method excluded by `methods`?
 
-   **Proposed (C):** If `methods` is absent, the location allows only `GET`.
+   **Working answer (B and C):** If `methods` is absent, the location allows only `GET`.
    `autoindex` defaults to `off`. A request whose method is not in the list
    gets `405 Method Not Allowed` with an `Allow` header listing the allowed
    methods (HTTP requires that header on a 405).
@@ -121,8 +195,8 @@ contract. Record each decision in the directive table and example config.
 
 ## Review checklist
 
-- [ ] A confirms the `listen` format and server-selection behavior.
-- [ ] B confirms location matching, path mapping, and per-route behavior.
-- [ ] C updates this document and `conf/default.conf` with the decisions.
+- [ ] The team confirms A's listener and server-selection answers.
+- [ ] The team confirms B's route and response answers, including upload safety.
+- [ ] The team resolves C's open path and missing-`listen` decisions; C then updates this document and `conf/default.conf`.
 - [ ] All ten directives have agreed syntax, scope, defaults, and an example.
 - [ ] Open questions are resolved or explicitly deferred with an owner.
