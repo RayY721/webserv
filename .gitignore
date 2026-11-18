@@ -3,6 +3,7 @@
 
 # Executable
 /webserv
+poll_echo
 
 # VS Code
 .vscode/
