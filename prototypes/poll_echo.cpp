@@ -1,3 +1,5 @@
+#include <csignal> // signal(), SIGPIPE, SIG_IGN
+
 // getaddrinfo(), freeaddrinfo(), socket(), listen()
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -30,6 +32,8 @@ void removeClient(std::vector<pollfd> &fds, std::map<int, std::string> &buffers,
 
 int main()
 {
+	signal(SIGPIPE, SIG_IGN); // a send() to a closed client returns -1 instead of killing the server
+
 	// ** Set up server **
 	// Describe the address: hints, getaddrinfo
 	struct addrinfo hints = {}; // zerorise
