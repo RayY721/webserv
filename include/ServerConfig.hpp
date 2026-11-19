@@ -17,10 +17,11 @@ struct ListenAddress
 		: address(host), port(number) {}
 };
 
-// One server block. Defaults are provisional until the C1 configuration
-// contract is approved.
-// listen starts empty; after a server block is parsed, the parser adds
-// 127.0.0.1:8080 if no listen directive was given.
+// One server block. Defaults follow the C1 contract submitted for review.
+// listen starts empty; the parser must reject a server block without an
+// explicit listen directive. It must not insert a fallback listener.
+// The parser resolves relative root paths (including the default ".")
+// against the config file directory before handing configs to runtime code.
 class ServerConfig
 {
 public:
