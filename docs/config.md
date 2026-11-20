@@ -47,7 +47,7 @@ The table is a quick reference; the detailed rules and remaining decisions are r
 | `index` | `server` or `location`: `index <filename>;` | File to try when the mapped URL is a directory. | Server: `index.html`. Location: inherit server index. | `index index.html;` |
 | `error_page` | `server`: `error_page <status> <file>;` | Custom response file for that HTTP error status; otherwise use a built-in page. May repeat for different statuses. | Unset: use the built-in error page for that status. | `error_page 404 ../www/errors/404.html;` |
 | `client_max_body_size` | `server`: `client_max_body_size <bytes>;` | Reject a request body larger than this many bytes. | 1048576 bytes (1 MiB) per server. | `client_max_body_size 1048576;` |
-| `methods` | `location`: `methods <method>...;` | Allow the listed methods on this route. At minimum, the project must support GET, POST and DELETE somewhere. | `GET` only. | `methods GET POST DELETE;` |
+| `methods` | `location`: `methods <method>...;` | Allow the listed methods on this route. Only uppercase `GET`, `POST`, `DELETE` are valid; anything else is a config error. At minimum, the project must support GET, POST and DELETE somewhere. | `GET` only. | `methods GET POST DELETE;` |
 | `autoindex` | `location`: `autoindex on\|off;` | Enable or disable a directory listing when no index file applies. | `off`. | `autoindex off;` |
 | `return` | `location`: `return <3xx-status> <target>;` | Redirect requests matching this route. | Unset: no redirect. | `return 301 /new;` |
 | `upload_store` | `location`: `upload_store <directory>;` | Permit uploads on this route and save files in this directory. | Unset: uploads disabled. | `upload_store ../www/uploads;` |
@@ -92,6 +92,19 @@ the next meeting. They describe intended behavior, not tested implementation.
 - `location` matches a URI path prefix at a segment boundary: `/images`
   matches `/images` and `/images/a.png`, but not `/images-old/a.png`. The
   longest matching location wins.
+- **Agreed in #26 (B and C):** the parser stores a location path without a
+  trailing `/`, except `/` itself: `location /uploads/` and
+  `location /uploads` both become `/uploads`. Route code therefore handles
+  one form only.
+- **Agreed in #26 (B and C):** if a server has no `location /`, the parser
+  adds one with no directives of its own: it uses the server's `root` and
+  `index`, allows GET only, and has autoindex off. Every URI then matches at
+  least one location, and route code needs no "no location matched" case.
+- **Agreed in #26 (B and C):** the parser converts `methods` words to the
+  shared `Method` enum (`include/Method.hpp`, also used by `Request`).
+  Method names are uppercase `GET`, `POST`, and `DELETE` only; any other word
+  (`get`, `GETT`, `PUT`) is a config error with its line number. The 405 check
+  compares the request's `Method` directly with the location's set.
 - Remove the matching location prefix before joining the remainder to its
   `root`: `/images/a.png` with `root ../www/img` maps to `../www/img/a.png`.
   Joining must produce exactly one separator. This `root` behavior resembles
@@ -152,6 +165,23 @@ the next meeting. They describe intended behavior, not tested implementation.
 - **Proposal:** Assign owners for later demo files and directories. Their
   absence does not block agreement on this format.
 
+### C2 — runtime structures (agreed in #26 review)
+
+These rules come from A's and B's review of the C2 headers and bind the code
+that uses them.
+
+- `ServerConfig` and `LocationConfig` objects are built once by the parser and
+  never modified, added to, or resized afterwards. `Client` keeps a
+  `const ServerConfig*`, and route code may keep pointers into `locations`,
+  so later changes could leave dangling pointers.
+- `CgiProcess` owns the parent-side pipe fds and the child process. It cannot
+  be copied. Its destructor closes any open fd and kills and reaps a child not
+  yet reaped, because `Client` holds it in a `std::unique_ptr` and drops it on
+  disconnect. Code that closes an fd early or reaps the child sets that field
+  to `-1`.
+- `CgiProcess::start_time` uses `std::chrono::steady_clock`, the same clock
+  as `Client::lastActivity`, so one timeout sweep can check both.
+
 The original questions are kept below as the meeting agenda. Confirm or
 revise the working decisions above, and record any deferred item with an owner.
 
@@ -177,6 +207,10 @@ revise the working decisions above, and record any deferred item with an owner.
 
 4. Is `location` a URL prefix? Should the longest matching prefix win, and
    must `/images` match `/images/a.png` but not `/images-old/a.png`?
+
+   **Working answer (B and C):** Yes to all three. The parser removes a
+   trailing `/` from location paths (except `/`) and adds a default
+   `location /` to any server without one.
 5. When `location /images { root ../www/img; }` receives
    `/images/a.png`, is the file `../www/img/a.png` (strip the prefix) or
    `../www/img/images/a.png` (keep it)? The project brief's example suggests
@@ -196,7 +230,8 @@ revise the working decisions above, and record any deferred item with an owner.
    **Working answer (B and C):** If `methods` is absent, the location allows only `GET`.
    `autoindex` defaults to `off`. A request whose method is not in the list
    gets `405 Method Not Allowed` with an `Allow` header listing the allowed
-   methods (HTTP requires that header on a 405).
+   methods (HTTP requires that header on a 405). Method names are uppercase
+   `GET`, `POST`, `DELETE`; anything else in `methods` is a config error.
 8. If `return` is set, does it take precedence over static files, uploads,
    and CGI? Which redirect statuses and target forms are supported?
 9. Is `upload_store` alone enough to enable uploads? How are upload filenames
@@ -237,5 +272,6 @@ revise the working decisions above, and record any deferred item with an owner.
 - [ ] The team confirms A's listener and server-selection answers.
 - [ ] The team confirms B's route and response answers, including upload safety.
 - [ ] The team reviews C1's selected defaults, config-relative paths, and explicit-`listen` rule; the document and illustrative config reflect these choices.
+- [ ] The team confirms the C2 structure agreements from #26 (path normalization, default `location /`, `Method` enum, immutable configs, `CgiProcess` ownership and clock).
 - [ ] All ten directives have agreed syntax, scope, defaults, and an example.
 - [ ] Open questions are resolved or explicitly deferred with an owner.
