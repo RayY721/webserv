@@ -5,15 +5,29 @@
 #include <set>
 #include <string>
 
-// One URL-prefix route. Empty root/index means inherit the server value.
-// Defaults are provisional until the C1 configuration contract is approved.
+#include "Method.hpp"
+
+// One URL-prefix route. Defaults follow the C1 contract submitted for review.
+// Empty root/index means the location uses the server's value.
+//
+// Parser obligations:
+// - path is stored without a trailing '/', except "/" itself:
+//   "location /uploads/" and "location /uploads" both store "/uploads".
+//   B matches whole segments: "/uploads" matches "/uploads" and "/uploads/...".
+// - methods holds only Get, Post and Delete. Any other word in a methods
+//   directive (GETT, PUT, get...) is a config error with its line number;
+//   Method::Unknown is never stored.
+// - return_status is one of 301, 302, 303, 307, 308; any other code is a
+//   config error.
+// - Relative root, upload_store and cgi executable paths are resolved against
+//   the config file directory; absolute paths stay absolute.
 class LocationConfig
 {
 public:
 	std::string path;
 	std::string root;
 	std::string index;
-	std::set<std::string> methods;
+	std::set<Method> methods;
 	bool autoindex;
 	int return_status;                 // 0 means no redirect.
 	std::string return_target;         // Empty when no redirect is configured.
@@ -22,10 +36,7 @@ public:
 
 	// Constructor:
 	LocationConfig()
-		: path("/"), autoindex(false), return_status(0)
-	{
-		methods.insert("GET");
-	}
+		: path("/"), methods{Method::Get}, autoindex(false), return_status(0) {}
 };
 
 #endif
