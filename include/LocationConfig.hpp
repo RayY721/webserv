@@ -7,7 +7,7 @@
 
 #include "Method.hpp"
 
-// One URL-prefix route. Defaults follow the C1 contract submitted for review.
+// One URL-prefix route. Defaults follow the decided C1 contract (docs/config.md).
 // Empty root/index means the location uses the server's value.
 //
 // Parser obligations:
@@ -34,7 +34,6 @@ public:
 	std::string upload_store;          // Empty means uploads are disabled.
 	std::map<std::string, std::string> cgi; // Extension -> executable path.
 
-	// Constructor:
 	LocationConfig()
 		: path("/"), methods{Method::Get}, autoindex(false), return_status(0) {}
 };

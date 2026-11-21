@@ -4,15 +4,7 @@
 #include <map>
 #include <string>
 
-// The methods webserv handles. There are only a few, so each one has its own value.
-// Any other method (PUT, FOO...) becomes Unknown, and webserv answers 405.
-enum class Method
-{
-	Get,
-	Post,
-	Delete,
-	Unknown
-};
+#include "Method.hpp"
 
 // One request from the client, split into its parts.
 // The client asks for something, so a request has a method and a path.

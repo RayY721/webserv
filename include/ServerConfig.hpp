@@ -21,7 +21,7 @@ struct ListenAddress
 		: address(host), port(number) {}
 };
 
-// One server block. Defaults follow the C1 contract submitted for review.
+// One server block. Defaults follow the decided C1 contract (docs/config.md).
 //
 // Parser obligations:
 // - listen starts empty; the parser must reject a server block without an
@@ -47,7 +47,6 @@ public:
 	std::size_t client_max_body_size;
 	std::vector<LocationConfig> locations;
 
-	// Constructor
 	ServerConfig()
 		: root("."), index("index.html"), client_max_body_size(1024 * 1024) {}
 };

@@ -33,7 +33,6 @@ public:
 	// from this offset; input_fd can be closed once it equals the body size.
 	std::size_t body_bytes_written;
 
-	// Constructor:
 	CgiProcess()
 		: pid(-1), input_fd(-1), output_fd(-1), start_time(),
 		  body_bytes_written(0) {}
