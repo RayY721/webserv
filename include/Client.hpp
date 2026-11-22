@@ -10,7 +10,7 @@
 #include "Request.hpp"
 #include "Response.hpp"
 
-class ServerConfig;
+#include "ServerConfig.hpp"
 
 // Where a client is in its life. Each client is in exactly one state, and the
 // poll() loop looks only at the state to know what to wait for.
