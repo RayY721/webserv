@@ -13,7 +13,7 @@ make && python3 tests/run_all.py   # run all tests
 
 ## Rules that always apply
 
-- C++17 (`-std=c++17` in the Makefile). C++11 and C++17 are confirmed allowed, despite the subject text saying C++98.
+- C++17 (`-std=c++17` in the Makefile).
 - Any socket or pipe I/O must go through the single `poll()` loop: no `read`/`recv`/`write`/`send` before poll reports the fd ready, and no `errno` checks after I/O. Breaking this is a grade 0.
 
 ## Where to look
