@@ -1,24 +1,33 @@
 NAME = webserv
+DUMP = config_dump
 
 CXX = c++
-CXXFLAGS = -Wall -Wextra -Werror -std=c++17
+CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude
 
-SRCS = main.cpp
+CONFIG_SRCS = src/config/ConfigLexer.cpp
+
+SRCS = main.cpp $(CONFIG_SRCS)
 OBJS = $(SRCS:.cpp=.o)
+
+DUMP_SRCS = tests/config_dump.cpp $(CONFIG_SRCS)
+DUMP_OBJS = $(DUMP_SRCS:.cpp=.o)
 
 all: $(NAME)
 
 $(NAME): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(NAME)
 
+$(DUMP): $(DUMP_OBJS)
+	$(CXX) $(CXXFLAGS) $(DUMP_OBJS) -o $(DUMP)
+
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS)
+	rm -f $(OBJS) $(DUMP_OBJS)
 
 fclean: clean
-	rm -f $(NAME)
+	rm -f $(NAME) $(DUMP)
 
 re: fclean all
 
