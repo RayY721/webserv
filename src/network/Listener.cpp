@@ -1,16 +1,12 @@
 #include "Listener.hpp"
 #include <string>
-
-// getaddrinfo(), freeaddrinfo(), socket(), listen()
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-
-
 #include <fcntl.h>
-#include <cstring> // strerror
+#include <cstring>
 #include <cerrno>
-#include <unistd.h> // close()
+#include <unistd.h>
 #include <stdexcept>
 
 static int openListener(const ListenAddress &addr)
