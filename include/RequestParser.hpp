@@ -14,4 +14,21 @@
 // does not look like HTTP/<digit>.<digit>.
 bool parseRequestLine(const std::string& line, Request& req);
 
+// What parseRequestHead says after looking at the bytes received so far.
+enum class ParseStatus
+{
+	NeedMore,	// The empty line has not arrived yet: wait for more bytes.
+	Done,		// The head is complete and req is filled.
+	Error		// The head is wrong: errorStatus says which code to answer.
+};
+
+// Looks in buffer (the bytes received from the client) for a complete head:
+// the first line, the headers and the empty line that ends them.
+// Lines may end with "\r\n" or with "\n" alone.
+// Done: fills req (header names in lowercase) and removes the head from buffer,
+//   so what is left in buffer is whatever came after the empty line.
+// NeedMore: changes nothing; call it again when more bytes arrive.
+// Error: errorStatus is 414 (first line too long) or 400 (anything else).
+ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus);
+
 #endif

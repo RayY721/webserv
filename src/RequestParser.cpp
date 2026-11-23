@@ -1,6 +1,12 @@
 #include "RequestParser.hpp"
 
 #include <cctype>
+#include <vector>
+
+// The longest first line we accept; longer gives 414 URI Too Long (8 KB, like NGINX).
+static const std::size_t MAX_REQUEST_LINE = 8192;
+// The longest head (first line + headers) we accept; longer gives 400 (32 KB, like NGINX).
+static const std::size_t MAX_HEAD = 32768;
 
 // Turns the method text into the enum.
 // Any other text (PUT, FOO, get...) becomes Unknown, and B5 rejects it.
@@ -69,4 +75,111 @@ bool parseRequestLine(const std::string& line, Request& req)
 		req.query = target.substr(question + 1);
 	}
 	return true;
+}
+
+// Cuts the line from start up to the '\n' at end, without the '\n'
+// and without the '\r' before it, if there is one.
+static std::string cutLine(const std::string& buffer, std::size_t start, std::size_t end)
+{
+	std::string line = buffer.substr(start, end - start);
+	if (!line.empty() && line.back() == '\r')
+		line.pop_back();
+	return line;
+}
+
+// "Host" -> "host"
+static std::string toLower(std::string text)
+{
+	for (char& c : text)
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	return text;
+}
+
+// Removes the spaces and tabs at both ends: "  localhost " -> "localhost"
+static std::string trim(const std::string& text)
+{
+	std::size_t first = text.find_first_not_of(" \t");
+	if (first == std::string::npos)
+		return "";
+	std::size_t last = text.find_last_not_of(" \t");
+	return text.substr(first, last - first + 1);
+}
+
+// "Host: localhost" -> req.headers["host"] = "localhost".
+// Returns false if there is no ':', or if the name is empty or has a space or tab in it.
+static bool parseHeaderLine(const std::string& line, Request& req)
+{
+	std::size_t colon = line.find(':');
+	if (colon == std::string::npos || colon == 0)
+		return false;
+	std::string name = line.substr(0, colon);
+	if (name.find_first_of(" \t") != std::string::npos)
+		return false;
+	req.headers[toLower(name)] = trim(line.substr(colon + 1));
+	return true;
+}
+
+ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus)
+{
+	// 1. Cut the buffer into lines until the empty line.
+	std::vector<std::string> lines;	// The first line, then one line per header.
+	std::size_t start = 0;			// Where the next line starts in buffer.
+	while (true)
+	{
+		std::size_t end = buffer.find('\n', start);
+		if (end == std::string::npos)
+		{
+			// This line has not finished arriving. Wait, unless it is already too long.
+			if (lines.empty() && buffer.size() - start > MAX_REQUEST_LINE)
+			{
+				errorStatus = 414;
+				return ParseStatus::Error;
+			}
+			if (buffer.size() > MAX_HEAD)
+			{
+				errorStatus = 400;
+				return ParseStatus::Error;
+			}
+			return ParseStatus::NeedMore;
+		}
+		std::string line = cutLine(buffer, start, end);
+		start = end + 1;
+		if (lines.empty() && line.size() > MAX_REQUEST_LINE)
+		{
+			errorStatus = 414;
+			return ParseStatus::Error;
+		}
+		if (start > MAX_HEAD)
+		{
+			errorStatus = 400;
+			return ParseStatus::Error;
+		}
+		if (line.empty())
+		{
+			// Empty lines before the first line are skipped, like NGINX does.
+			if (lines.empty())
+				continue;
+			break;	// The empty line after the headers: the head is complete.
+		}
+		lines.push_back(line);
+	}
+
+	// 2. The first line, then each header.
+	if (!parseRequestLine(lines[0], req))
+	{
+		errorStatus = 400;
+		return ParseStatus::Error;
+	}
+	for (std::size_t i = 1; i < lines.size(); i++)
+	{
+		if (!parseHeaderLine(lines[i], req))
+		{
+			errorStatus = 400;
+			return ParseStatus::Error;
+		}
+	}
+
+	// 3. Remove the head from buffer. What is left came after the empty line.
+	buffer.erase(0, start);
+	return ParseStatus::Done;
 }
