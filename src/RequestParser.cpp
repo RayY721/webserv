@@ -1,7 +1,9 @@
 #include "RequestParser.hpp"
 
+#include <cctype>
+
 // Turns the method text into the enum.
-// Any other text (PUT, FOO, get...) becomes Unknown, and webserv answers 405 (B5).
+// Any other text (PUT, FOO, get...) becomes Unknown, and B5 rejects it.
 static Method toMethod(const std::string& text)
 {
 	if (text == "GET")
@@ -11,6 +13,18 @@ static Method toMethod(const std::string& text)
 	if (text == "DELETE")
 		return Method::Delete;
 	return Method::Unknown;
+}
+
+// The version must look like HTTP/<digit>.<digit>, e.g. "HTTP/1.1".
+// Upper case only: "http/1.1" is refused.
+// Whether that version is supported (1.0 and 1.1, otherwise 505) is checked later.
+static bool looksLikeVersion(const std::string& version)
+{
+	return version.size() == 8
+		&& version.substr(0, 5) == "HTTP/"
+		&& std::isdigit(static_cast<unsigned char>(version[5]))
+		&& version[6] == '.'
+		&& std::isdigit(static_cast<unsigned char>(version[7]));
 }
 
 bool parseRequestLine(const std::string& line, Request& req)
@@ -32,6 +46,11 @@ bool parseRequestLine(const std::string& line, Request& req)
 	std::string version = line.substr(secondSpace + 1);
 	// Two spaces together leave an empty part, e.g. "GET  HTTP/1.1".
 	if (method.empty() || target.empty() || version.empty())
+		return false;
+	// The path always starts with '/': "GET index.html HTTP/1.1" is refused.
+	if (target[0] != '/')
+		return false;
+	if (!looksLikeVersion(version))
 		return false;
 
 	req.method = toMethod(method);

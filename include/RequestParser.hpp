@@ -9,8 +9,9 @@
 // Example: "GET /search?q=cats HTTP/1.1"
 //   method = Get, path = "/search", query = "q=cats", version = "HTTP/1.1"
 // The line comes without "\r\n" at the end: cutting the lines is part of B3.
-// Returns false if the line is not three parts separated by one space each.
-// Later (B4), false becomes 400 Bad Request.
+// Returns false (later 400 Bad Request) if the line is not three parts separated
+// by one space each, if the path does not start with '/', or if the version
+// does not look like HTTP/<digit>.<digit>.
 bool parseRequestLine(const std::string& line, Request& req);
 
 #endif
