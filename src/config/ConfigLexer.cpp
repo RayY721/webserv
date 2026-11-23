@@ -1,6 +1,7 @@
 #include "ConfigLexer.hpp"
 
 #include <cctype>
+#include <cstddef>
 
 #include "ConfigError.hpp"
 
