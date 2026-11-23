@@ -4,7 +4,7 @@ DUMP = config_dump
 CXX = c++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude
 
-CONFIG_SRCS = src/config/ConfigLexer.cpp
+CONFIG_SRCS = src/config/ConfigLexer.cpp src/config/ConfigParser.cpp
 
 SRCS = main.cpp $(CONFIG_SRCS)
 OBJS = $(SRCS:.cpp=.o)
