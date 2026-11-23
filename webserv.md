@@ -1,7 +1,7 @@
 # Webserv — Project Brief
 
 **Source:** *Webserv*, version 24.0 (15-page project subject).  
-**Goal:** Implement an HTTP server in C++98 that can be tested with a standard web browser.
+**Goal:** Implement an HTTP server in C++17 that can be tested with a standard web browser.
 
 ## Project at a glance
 
@@ -9,7 +9,7 @@
 | --- | --- |
 | Program name | `webserv` |
 | Invocation | `./webserv [configuration file]` |
-| Language | C++98 |
+| Language | C++17 (the subject text says C++98; the team confirmed that C++17 are allowed) |
 | Files to submit | `Makefile`, `*.h`, `*.hpp`, `*.cpp`, `*.tpp`, `*.ipp`, and configuration files |
 | Makefile rules | `$(NAME)`, `all`, `clean`, `fclean`, `re` |
 | Library policy | No external libraries, Boost, or Libft |
@@ -18,7 +18,7 @@ The configuration file may be supplied on the command line or loaded from a defa
 
 ## Build and reliability rules
 
-- Compile with `c++ -Wall -Wextra -Werror`. The code must also compile with `-std=c++98`.
+- Compile with `c++ -Wall -Wextra -Werror`. The code must compile with `-std=c++17` (the standard set in the Makefile); .
 - Prefer C++ facilities over corresponding C facilities where possible.
 - The Makefile must compile the sources without unnecessary relinking.
 - The program must not crash or terminate unexpectedly, including when memory runs out. A crash makes the project non-functional and results in a grade of 0.
@@ -65,7 +65,7 @@ Provide configuration files and default files that demonstrate every required fe
 
 ## Authorized external functions
 
-All functionality must be implemented in C++98. The subject lists these external functions and related facilities as authorized:
+All functionality must be implemented in C++17. The subject lists these external functions and related facilities as authorized:
 
 `execve`, `pipe`, `strerror`, `gai_strerror`, `errno`, `dup`, `dup2`, `fork`, `socketpair`, `htons`, `htonl`, `ntohs`, `ntohl`, `select`, `poll`, `epoll` (`epoll_create`, `epoll_ctl`, `epoll_wait`), `kqueue` (`kqueue`, `kevent`), `socket`, `accept`, `listen`, `send`, `recv`, `chdir`, `bind`, `connect`, `getaddrinfo`, `freeaddrinfo`, `setsockopt`, `getsockname`, `getprotobyname`, `fcntl`, `close`, `read`, `write`, `waitpid`, `kill`, `signal`, `access`, `stat`, `open`, `opendir`, `readdir`, `closedir`.
 
