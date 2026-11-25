@@ -5,8 +5,9 @@ CXX = c++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude
 
 CONFIG_SRCS = src/config/ConfigLexer.cpp
+HTTP_SRCS = src/http/RequestParser.cpp
 
-SRCS = main.cpp $(CONFIG_SRCS)
+SRCS = main.cpp $(CONFIG_SRCS) $(HTTP_SRCS)
 OBJS = $(SRCS:.cpp=.o)
 
 DUMP_SRCS = tests/config_dump.cpp $(CONFIG_SRCS)
