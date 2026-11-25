@@ -105,24 +105,58 @@ static std::string trim(const std::string& text)
 	return text.substr(first, last - first + 1);
 }
 
+// Header names may only have letters, digits and !#$%&'*+-.^_`|~ (an HTTP "token").
+static bool isNameChar(char c)
+{
+	return std::isalnum(static_cast<unsigned char>(c))
+		|| std::string("!#$%&'*+-.^_`|~").find(c) != std::string::npos;
+}
+
+// True if text has a control character (like '\r' or '\0'). A tab is allowed.
+static bool hasControlChar(const std::string& text)
+{
+	for (char c : text)
+	{
+		unsigned char u = static_cast<unsigned char>(c);
+		if ((u < 32 && c != '\t') || u == 127)
+			return true;
+	}
+	return false;
+}
+
+// Headers that may appear only once: with two different values we would not know
+// which one is true (Content-Length: 5 and Content-Length: 50).
+static bool mustBeUnique(const std::string& name)
+{
+	return name == "host" || name == "content-length" || name == "transfer-encoding";
+}
+
 // "Host: localhost" -> req.headers["host"] = "localhost".
-// Returns false if there is no ':', or if the name is empty or has a space or tab in it.
+// Returns false if there is no ':', if the name is empty or has a character that
+// is not allowed, if the value has a control character, or if the header must be
+// unique and is already there.
 static bool parseHeaderLine(const std::string& line, Request& req)
 {
 	std::size_t colon = line.find(':');
 	if (colon == std::string::npos || colon == 0)
 		return false;
-	std::string name = line.substr(0, colon);
-	if (name.find_first_of(" \t") != std::string::npos)
+	std::string name = toLower(line.substr(0, colon));
+	for (char c : name)
+		if (!isNameChar(c))
+			return false;
+	std::string value = trim(line.substr(colon + 1));
+	if (hasControlChar(value))
 		return false;
-	req.headers[toLower(name)] = trim(line.substr(colon + 1));
+	if (mustBeUnique(name) && req.headers.count(name) > 0)
+		return false;
+	req.headers[name] = value;
 	return true;
 }
 
 ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus)
 {
 	// 1. Cut the buffer into lines until the empty line.
-	std::vector<std::string> lines;	// The first line, then one line per header.
+	std::vector<std::string> lines;	// lines[0] = request line, then one header per entry.
 	std::size_t start = 0;			// Where the next line starts in buffer.
 	while (true)
 	{
@@ -130,7 +164,8 @@ ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus
 		if (end == std::string::npos)
 		{
 			// This line has not finished arriving. Wait, unless it is already too long.
-			if (lines.empty() && buffer.size() - start > MAX_REQUEST_LINE)
+			// + 1: the '\r' of its "\r\n" may already be here, and it is not part of the line.
+			if (lines.empty() && buffer.size() - start > MAX_REQUEST_LINE + 1)
 			{
 				errorStatus = 414;
 				return ParseStatus::Error;
@@ -164,22 +199,26 @@ ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus
 		lines.push_back(line);
 	}
 
-	// 2. The first line, then each header.
-	if (!parseRequestLine(lines[0], req))
+	// 2. The first line, then each header, into a new Request.
+	// It is copied to req only if everything is right, so on Error req does not change.
+	Request parsed;
+	if (!parseRequestLine(lines[0], parsed))
 	{
 		errorStatus = 400;
 		return ParseStatus::Error;
 	}
 	for (std::size_t i = 1; i < lines.size(); i++)
 	{
-		if (!parseHeaderLine(lines[i], req))
+		if (!parseHeaderLine(lines[i], parsed))
 		{
 			errorStatus = 400;
 			return ParseStatus::Error;
 		}
 	}
 
-	// 3. Remove the head from buffer. What is left came after the empty line.
+	// 3. Everything is right: fill req and remove the head from buffer.
+	// What is left in buffer came after the empty line.
+	req = parsed;
 	buffer.erase(0, start);
 	return ParseStatus::Done;
 }
