@@ -33,6 +33,31 @@ static std::size_t parseNumber(const std::string &text, std::size_t max,
 	return value;
 }
 
+// A byte count with an optional NGINX-style k/K or m/M suffix. The limit given
+// to parseNumber is divided by the unit, so the multiplication cannot overflow.
+static std::size_t parseBodySize(const std::string &text, int line)
+{
+	std::string digits = text;
+	std::size_t unit = 1;
+	if (!digits.empty())
+	{
+		char last = digits[digits.size() - 1];
+		if (last == 'k' || last == 'K')
+			unit = 1024;
+		else if (last == 'm' || last == 'M')
+			unit = 1024 * 1024;
+		if (unit != 1)
+			digits.erase(digits.size() - 1);
+	}
+	if (digits.empty())
+		throw ConfigError(line, "invalid client_max_body_size '" + text + "'");
+	std::size_t value = parseNumber(digits,
+		std::numeric_limits<std::size_t>::max() / unit, line, "client_max_body_size");
+	if (value == 0)
+		throw ConfigError(line, "client_max_body_size must be at least 1");
+	return value * unit;
+}
+
 static bool isIPv4(const std::string &text)
 {
 	int parts = 0;
@@ -133,12 +158,7 @@ static void applyServerDirective(ServerConfig &server, std::set<std::string> &se
 	else if (name.text == "index")
 		server.index = args[0];
 	else
-	{
-		server.client_max_body_size = parseNumber(args[0],
-			std::numeric_limits<std::size_t>::max(), name.line, "client_max_body_size");
-		if (server.client_max_body_size == 0)
-			throw ConfigError(name.line, "client_max_body_size must be at least 1");
-	}
+		server.client_max_body_size = parseBodySize(args[0], name.line);
 }
 
 // C4b replaces this with real location parsing; for now only the shape is checked.
