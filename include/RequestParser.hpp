@@ -28,7 +28,9 @@ enum class ParseStatus
 // Done: fills req (header names in lowercase) and removes the head from buffer,
 //   so what is left in buffer is whatever came after the empty line.
 // NeedMore: changes nothing; call it again when more bytes arrive.
-// Error: changes nothing in req; errorStatus is 414 (first line too long) or 400 (anything else).
+// Error: changes nothing in req; errorStatus is 414 (first line too long), 505 (version other
+//   than HTTP/1.0 or HTTP/1.1), 405 (unknown method, e.g. PUT or FOO) or 400 (anything else,
+//   e.g. HTTP/1.1 without Host).
 // Known limitation: empty lines before the first line count toward the 32 KB limit,
 //   so a client that sends only empty lines gets 400 when it reaches 32 KB.
 ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus);

@@ -7,9 +7,11 @@
 static const std::size_t MAX_REQUEST_LINE = 8192;
 // The longest head (first line + headers) we accept; longer gives 400 (32 KB, like NGINX).
 static const std::size_t MAX_HEAD = 32768;
+// The answer to a method webserv does not know (PUT, FOO...): 405 like NGINX (the RFC says 501).
+static const int UNKNOWN_METHOD_STATUS = 405;
 
 // Turns the method text into the enum.
-// Any other text (PUT, FOO, get...) becomes Unknown, and B5 rejects it.
+// Any other text (PUT, FOO, get...) becomes Unknown and parseRequestHead answers 405.
 static Method toMethod(const std::string& text)
 {
 	if (text == "GET")
@@ -202,7 +204,9 @@ ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus
 	// 2. The first line, then each header, into a new Request.
 	// It is copied to req only if everything is right, so on Error req does not change.
 	Request parsed;
-	if (!parseRequestLine(lines[0], parsed))
+	// A control character in the first line (like '\0') gives 400: C functions like open()
+	// stop at '\0', so "/a\0.py" would look like a .py to us but open "/a".
+	if (hasControlChar(lines[0]) || !parseRequestLine(lines[0], parsed))
 	{
 		errorStatus = 400;
 		return ParseStatus::Error;
@@ -216,7 +220,28 @@ ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus
 		}
 	}
 
-	// 3. Everything is right: fill req and remove the head from buffer.
+	// 3. Only HTTP/1.0 and HTTP/1.1 are supported, like NGINX: any other version gives 505.
+	if (parsed.version != "HTTP/1.0" && parsed.version != "HTTP/1.1")
+	{
+		errorStatus = 505;
+		return ParseStatus::Error;
+	}
+
+	// HTTP/1.1 requires a Host header (HTTP/1.0 does not): without it, 400.
+	if (parsed.version == "HTTP/1.1" && parsed.headers.count("host") == 0)
+	{
+		errorStatus = 400;
+		return ParseStatus::Error;
+	}
+
+	// A method webserv does not know: 405, after the checks above, like NGINX
+	// (so "FOO / HTTP/1.1" without Host still gives 400).
+	if (parsed.method == Method::Unknown)
+	{
+		errorStatus = UNKNOWN_METHOD_STATUS;
+		return ParseStatus::Error;
+	}
+	// 4. Everything is right: fill req and remove the head from buffer.
 	// What is left in buffer came after the empty line.
 	req = parsed;
 	buffer.erase(0, start);
