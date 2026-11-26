@@ -5,7 +5,7 @@ CXX = c++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude
 
 CONFIG_SRCS = src/config/ConfigLexer.cpp
-NETWORK_SRCS = src/network/Listener.cpp
+NETWORK_SRCS = src/network/Listener.cpp src/network/Client.cpp src/network/EventLoop.cpp
 
 SRCS = main.cpp $(CONFIG_SRCS) $(NETWORK_SRCS)
 OBJS = $(SRCS:.cpp=.o)
