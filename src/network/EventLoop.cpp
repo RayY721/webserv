@@ -20,10 +20,19 @@ void runEventLoop(const std::map<int, const ServerConfig*> &listeners)
 	while(true)
 	{
 		std::vector<pollfd> fds;
-		for (const auto &entry : listeners)
-			fds.push_back({entry.first, POLLIN, 0});
-		for (const auto &entry : clients)
-			fds.push_back({entry.first, entry.second.pollEvents(), 0});
+		try
+		{
+			for (const auto &entry : listeners)
+				fds.push_back({entry.first, POLLIN, 0});
+			for (const auto &entry : clients)
+				fds.push_back({entry.first, entry.second.pollEvents(), 0});
+		}
+		catch (const std::exception &e)
+		{
+			std::cerr << "failed to build fds vector: " << e.what() << std::endl;
+			continue;
+		}
+
 		int ready = poll(fds.data(), fds.size(), -1); // No timeout until A6 (idle clients).
 		if (ready == -1)
 		{
@@ -48,7 +57,15 @@ void runEventLoop(const std::map<int, const ServerConfig*> &listeners)
 						close(clientFd);
 						continue;
 					}
-					clients.try_emplace(clientFd, clientFd, lit->second);
+					try
+					{
+						clients.try_emplace(clientFd, clientFd, lit->second);
+					}
+					catch (...)
+					{
+						std::cerr << "accept: could not store the client, dropping it" << std::endl;
+						close(clientFd);
+					}
 				}
 				continue;
 			}
