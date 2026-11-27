@@ -27,6 +27,8 @@ PASS  test_startup.py::test_too_many_arguments_prints_usage
 - `PASS` = the test worked.
 - `FAIL` = something is wrong. Below it you see which line failed.
 
+`tests/test_event_loop.py` needs `lsof` (installed on macOS; on Linux: `sudo apt install lsof`).
+
 **From sprint 3 (25 Nov)**, run this **before every PR**. Everything must say PASS, also the tests of the other layers. Before sprint 3 there is nothing to run yet: the server cannot answer requests (section 7).
 
 ---
