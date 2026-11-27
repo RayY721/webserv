@@ -134,8 +134,19 @@ def test_bad_listen_values_are_rejected():
         assert_config_error(f"server {{\n    listen {value};\n}}", 2)
 
 
+def test_body_size_suffixes():
+    cases = {"10M": 10485760, "10m": 10485760, "512k": 524288,
+             "512K": 524288, "100": 100}
+    for value, expected in cases.items():
+        result = dump_servers_of(
+            f"server {{\n    listen 80;\n    client_max_body_size {value};\n}}")
+        assert result.returncode == 0, result.stderr
+        assert f"client_max_body_size {expected}" in result.stdout.splitlines()
+
+
 def test_bad_body_sizes_are_rejected():
-    for value in ["0", "-1", "+5", "1M", "99999999999999999999999"]:
+    for value in ["0", "0M", "-1", "+5", "M", "1G", "1MB", "1 M", "M1",
+                  "99999999999999999999999", "17592186044416M"]:
         assert_config_error(
             f"server {{\n    listen 80;\n    client_max_body_size {value};\n}}", 3)
 

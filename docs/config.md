@@ -45,7 +45,7 @@ The table is a quick reference; the detailed rules and remaining decisions are r
 | `root` | `server` or `location`: `root <directory>;` | Directory from which static URL paths are resolved. A location value overrides the server value. | Server: `.` (config file directory). Location: inherit server root. | `root ../www/site-a;` |
 | `index` | `server` or `location`: `index <filename>;` | File to try when the mapped URL is a directory. | Server: `index.html`. Location: inherit server index. | `index index.html;` |
 | `error_page` | `server`: `error_page <status> <file>;` | Custom response file for that HTTP error status; otherwise use a built-in page. May repeat for different statuses. | Unset: use the built-in error page for that status. | `error_page 404 ../www/errors/404.html;` |
-| `client_max_body_size` | `server`: `client_max_body_size <bytes>;` | Reject a request body larger than this many bytes. | 1048576 bytes (1 MiB) per server. | `client_max_body_size 1048576;` |
+| `client_max_body_size` | `server`: `client_max_body_size <size>;` | Reject a request body larger than this many bytes. `<size>` is a byte count, optionally followed by `k`/`K` (×1024) or `m`/`M` (×1048576), as in NGINX. | 1048576 bytes (1 MiB) per server. | `client_max_body_size 1048576;` |
 | `methods` | `location`: `methods <method>...;` | Allow the listed methods on this route. Only uppercase `GET`, `POST`, `DELETE` are valid; anything else is a config error. At minimum, the project must support GET, POST and DELETE somewhere. | `GET` only. | `methods GET POST DELETE;` |
 | `autoindex` | `location`: `autoindex on\|off;` | Enable or disable a directory listing when no index file applies. | `off`. | `autoindex off;` |
 | `return` | `location`: `return <3xx-status> <target>;` | Redirect requests matching this route. | Unset: no redirect. | `return 301 /new;` |
@@ -143,8 +143,10 @@ written. They describe intended behavior, not tested implementation.
   assets and their startup availability checks remain later implementation work.
 - **Decided:** Keep C2's server defaults `root .` and `index index.html`;
   a location without either value inherits that value from its server.
-- **Decided:** Accept positive decimal byte counts only, with no size
-  suffixes; reject zero, signs, non-digits, and overflow. Default
+- **Decided:** Accept a positive decimal byte count, optionally followed by
+  one NGINX-style suffix: `k`/`K` (×1024) or `m`/`M` (×1048576), so an
+  evaluator's `10M` works. Reject zero, signs, other suffixes (`g`, `MB`),
+  and overflow, including overflow caused by the suffix. Default
   `client_max_body_size` to 1 MiB (1,048,576 bytes) per server, as in the
   C2 header. B returns 413 for an oversized request.
 - **Decided:** Parse the whole file before opening listeners. Reject unknown
@@ -259,8 +261,9 @@ The original questions are kept below for reference; each is answered in
 12. Should sizes be decimal byte counts only, or also units such as `1M`?
     What is the default body-size limit if the directive is absent?
 
-    **Decided:** Positive decimal bytes only; default 1048576 bytes per
-    server. Reject zero, signs, non-digits, and overflow.
+    **Decided:** Positive decimal bytes, optionally with a `k`/`K` or `m`/`M`
+    suffix as in NGINX; default 1048576 bytes per server. Reject zero,
+    signs, other suffixes, and overflow.
 13. What should happen for unknown, duplicate, misplaced, or malformed
     directives, an empty `server`, and an unmatched brace? Prefer a startup
     error with a line number if the team agrees.
