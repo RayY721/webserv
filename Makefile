@@ -6,8 +6,7 @@ CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude
 
 CONFIG_SRCS = src/config/ConfigLexer.cpp src/config/ConfigParser.cpp
 NETWORK_SRCS = src/network/Listener.cpp
-HTTP_SRCS = src/http/RequestParser.cpp
-
+HTTP_SRCS = src/http/RequestParser.cpp src/http/RequestHandler.cpp
 SRCS = main.cpp $(CONFIG_SRCS) $(NETWORK_SRCS) $(HTTP_SRCS)
 OBJS = $(SRCS:.cpp=.o)
 
