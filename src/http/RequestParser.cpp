@@ -3,15 +3,19 @@
 #include <cctype>
 #include <vector>
 
+// Every rule here was checked against NGINX 1.24 with tests/compare_nginx.py.
+
 // The longest first line we accept; longer gives 414 URI Too Long (8 KB, like NGINX).
 static const std::size_t MAX_REQUEST_LINE = 8192;
+// The longest header line we accept; longer gives 400 (8 KB, like NGINX).
+static const std::size_t MAX_HEADER_LINE = 8192;
 // The longest head (first line + headers) we accept; longer gives 400 (32 KB, like NGINX).
 static const std::size_t MAX_HEAD = 32768;
 // The answer to a method webserv does not know (PUT, FOO...): 405 like NGINX (the RFC says 501).
 static const int UNKNOWN_METHOD_STATUS = 405;
 
 // Turns the method text into the enum.
-// Any other text (PUT, FOO, get...) becomes Unknown and parseRequestHead answers 405.
+// Any other well-formed method (PUT, FOO...) becomes Unknown, and parseRequestHead answers 405.
 static Method toMethod(const std::string& text)
 {
 	if (text == "GET")
@@ -23,42 +27,111 @@ static Method toMethod(const std::string& text)
 	return Method::Unknown;
 }
 
-// The version must look like HTTP/<digit>.<digit>, e.g. "HTTP/1.1".
-// Upper case only: "http/1.1" is refused.
-// Whether that version is supported (1.0 and 1.1, otherwise 505) is checked later.
-static bool looksLikeVersion(const std::string& version)
+// A method may only have A-Z, '_' and '-', like in NGINX: "get" or "G3T" is not a method.
+static bool isMethodName(const std::string& text)
 {
-	return version.size() == 8
-		&& version.substr(0, 5) == "HTTP/"
-		&& std::isdigit(static_cast<unsigned char>(version[5]))
-		&& version[6] == '.'
-		&& std::isdigit(static_cast<unsigned char>(version[7]));
+	for (char c : text)
+		if (!(c >= 'A' && c <= 'Z') && c != '_' && c != '-')
+			return false;
+	return true;
+}
+
+static bool isDigits(const std::string& text)
+{
+	if (text.empty())
+		return false;
+	for (char c : text)
+		if (!std::isdigit(static_cast<unsigned char>(c)))
+			return false;
+	return true;
+}
+
+// The major number of "HTTP/<major>.<minor>", like NGINX:
+// 1 for HTTP/1.x, 2 for any higher major (HTTP/2.0, HTTP/12.1), 0 for HTTP/0.x,
+// and -1 if the text does not look like a version ("FOO", "http/1.1", "HTTP/1", "HTTP/1.1000").
+static int versionMajor(const std::string& version)
+{
+	if (version.substr(0, 5) != "HTTP/")
+		return -1;
+	std::size_t dot = version.find('.', 5);
+	if (dot == std::string::npos)
+		return -1;
+	std::string major = version.substr(5, dot - 5);
+	std::string minor = version.substr(dot + 1);
+	if (!isDigits(major) || !isDigits(minor) || minor.size() > 3)
+		return -1;
+	if (major.find_first_not_of('0') == std::string::npos)
+		return 0;
+	if (major == "1")
+		return 1;
+	return 2;
+}
+
+// The target is a path ("/a?x=1"), or a full URL ("http://host/a?x=1"), which NGINX accepts too.
+// From a full URL only the part from the first '/' after the host is kept ("/" if there is none).
+// Returns false for anything else ("index.html", "*", "http://").
+static bool targetToPath(const std::string& target, std::string& path)
+{
+	if (target[0] == '/')
+	{
+		path = target;
+		return true;
+	}
+	std::size_t scheme = target.find("://");
+	if (scheme == std::string::npos || scheme == 0)
+		return false;
+	for (std::size_t i = 0; i < scheme; i++)
+		if (!std::isalpha(static_cast<unsigned char>(target[i])))
+			return false;
+	std::size_t host = scheme + 3;
+	if (host >= target.size() || target[host] == '/')
+		return false;
+	std::size_t slash = target.find('/', host);
+	path = slash == std::string::npos ? "/" : target.substr(slash);
+	return true;
+}
+
+// Splits the line at the spaces: "GET  /a   HTTP/1.1 " -> "GET", "/a", "HTTP/1.1".
+// Several spaces between the parts and spaces at the end are fine, like NGINX.
+static std::vector<std::string> splitAtSpaces(const std::string& line)
+{
+	std::vector<std::string> parts;
+	std::size_t start = 0;
+	while (start < line.size())
+	{
+		if (line[start] == ' ')
+		{
+			start++;
+			continue;
+		}
+		std::size_t space = line.find(' ', start);
+		if (space == std::string::npos)
+			space = line.size();
+		parts.push_back(line.substr(start, space - start));
+		start = space;
+	}
+	return parts;
 }
 
 bool parseRequestLine(const std::string& line, Request& req)
 {
-	// The line has three parts separated by one space each:
-	// METHOD space TARGET space VERSION
-	std::size_t firstSpace = line.find(' ');
-	if (firstSpace == std::string::npos)
+	// A space at the start is refused, like NGINX.
+	if (line.empty() || line[0] == ' ')
 		return false;
-	std::size_t secondSpace = line.find(' ', firstSpace + 1);
-	if (secondSpace == std::string::npos)
+	// The line has three parts: METHOD TARGET VERSION.
+	std::vector<std::string> parts = splitAtSpaces(line);
+	if (parts.size() != 3)
 		return false;
-	// A third space means more than three parts.
-	if (line.find(' ', secondSpace + 1) != std::string::npos)
+	const std::string& method = parts[0];
+	const std::string& version = parts[2];
+	// "get" or "G3T" is badly written (400), not an unknown method (405).
+	if (!isMethodName(method))
 		return false;
-
-	std::string method = line.substr(0, firstSpace);
-	std::string target = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
-	std::string version = line.substr(secondSpace + 1);
-	// Two spaces together leave an empty part, e.g. "GET  HTTP/1.1".
-	if (method.empty() || target.empty() || version.empty())
+	std::string target;
+	if (!targetToPath(parts[1], target))
 		return false;
-	// The path always starts with '/': "GET index.html HTTP/1.1" is refused.
-	if (target[0] != '/')
-		return false;
-	if (!looksLikeVersion(version))
+	// HTTP/0.x is refused here (400). HTTP/2.0 and higher is well written: 505 comes later.
+	if (versionMajor(version) < 1)
 		return false;
 
 	req.method = toMethod(method);
@@ -107,20 +180,13 @@ static std::string trim(const std::string& text)
 	return text.substr(first, last - first + 1);
 }
 
-// Header names may only have letters, digits and !#$%&'*+-.^_`|~ (an HTTP "token").
-static bool isNameChar(char c)
-{
-	return std::isalnum(static_cast<unsigned char>(c))
-		|| std::string("!#$%&'*+-.^_`|~").find(c) != std::string::npos;
-}
-
-// True if text has a control character (like '\r' or '\0'). A tab is allowed.
+// True if text has a control character (0-31 or 127), a tab included.
 static bool hasControlChar(const std::string& text)
 {
 	for (char c : text)
 	{
 		unsigned char u = static_cast<unsigned char>(c);
-		if ((u < 32 && c != '\t') || u == 127)
+		if (u < 32 || u == 127)
 			return true;
 	}
 	return false;
@@ -133,26 +199,37 @@ static bool mustBeUnique(const std::string& name)
 	return name == "host" || name == "content-length" || name == "transfer-encoding";
 }
 
-// "Host: localhost" -> req.headers["host"] = "localhost".
-// Returns false if there is no ':', if the name is empty or has a character that
-// is not allowed, if the value has a control character, or if the header must be
-// unique and is already there.
+// "Host: localhost" -> req.headers["host"] = "localhost". Like NGINX:
+// - a line with no ':' is ignored;
+// - a name with other characters than letters, digits and '-' ("X(y", "X_Y", "X.Y") is ignored;
+// - an empty name, a space, tab or control character in the name ("Host : a"), a '\0' or '\r'
+//   in the value, or a second Host, Content-Length or Transfer-Encoding gives false (400).
 static bool parseHeaderLine(const std::string& line, Request& req)
 {
 	std::size_t colon = line.find(':');
-	if (colon == std::string::npos || colon == 0)
+	if (colon == std::string::npos)
+		return true;
+	std::string name = line.substr(0, colon);
+	if (name.empty() || name.find(' ') != std::string::npos || hasControlChar(name))
 		return false;
-	std::string name = toLower(line.substr(0, colon));
-	for (char c : name)
-		if (!isNameChar(c))
-			return false;
 	std::string value = trim(line.substr(colon + 1));
-	if (hasControlChar(value))
+	if (value.find('\0') != std::string::npos || value.find('\r') != std::string::npos)
 		return false;
+	name = toLower(name);
+	for (char c : name)
+		if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-')
+			return true;
 	if (mustBeUnique(name) && req.headers.count(name) > 0)
 		return false;
 	req.headers[name] = value;
 	return true;
+}
+
+// A Host value NGINX refuses with 400: empty, or with a '/' or "..".
+static bool isBadHost(const std::string& host)
+{
+	return host.empty() || host.find('/') != std::string::npos
+		|| host.find("..") != std::string::npos;
 }
 
 ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus)
@@ -167,12 +244,13 @@ ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus
 		{
 			// This line has not finished arriving. Wait, unless it is already too long.
 			// + 1: the '\r' of its "\r\n" may already be here, and it is not part of the line.
-			if (lines.empty() && buffer.size() - start > MAX_REQUEST_LINE + 1)
+			std::size_t waiting = buffer.size() - start;
+			if (lines.empty() && waiting > MAX_REQUEST_LINE + 1)
 			{
 				errorStatus = 414;
 				return ParseStatus::Error;
 			}
-			if (buffer.size() > MAX_HEAD)
+			if ((!lines.empty() && waiting > MAX_HEADER_LINE + 1) || buffer.size() > MAX_HEAD)
 			{
 				errorStatus = 400;
 				return ParseStatus::Error;
@@ -186,7 +264,7 @@ ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus
 			errorStatus = 414;
 			return ParseStatus::Error;
 		}
-		if (start > MAX_HEAD)
+		if ((!lines.empty() && line.size() > MAX_HEADER_LINE) || start > MAX_HEAD)
 		{
 			errorStatus = 400;
 			return ParseStatus::Error;
@@ -204,11 +282,18 @@ ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus
 	// 2. The first line, then each header, into a new Request.
 	// It is copied to req only if everything is right, so on Error req does not change.
 	Request parsed;
-	// A control character in the first line (like '\0') gives 400: C functions like open()
+	// No control character in the first line, a tab included: C functions like open()
 	// stop at '\0', so "/a\0.py" would look like a .py to us but open "/a".
 	if (hasControlChar(lines[0]) || !parseRequestLine(lines[0], parsed))
 	{
 		errorStatus = 400;
+		return ParseStatus::Error;
+	}
+	// Only HTTP/1.x is supported: HTTP/2.0 and higher give 505. Checked here, before
+	// the headers, as NGINX does.
+	if (versionMajor(parsed.version) != 1)
+	{
+		errorStatus = 505;
 		return ParseStatus::Error;
 	}
 	for (std::size_t i = 1; i < lines.size(); i++)
@@ -220,15 +305,9 @@ ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus
 		}
 	}
 
-	// 3. Only HTTP/1.0 and HTTP/1.1 are supported, like NGINX: any other version gives 505.
-	if (parsed.version != "HTTP/1.0" && parsed.version != "HTTP/1.1")
-	{
-		errorStatus = 505;
-		return ParseStatus::Error;
-	}
-
-	// HTTP/1.1 requires a Host header (HTTP/1.0 does not): without it, 400.
-	if (parsed.version == "HTTP/1.1" && parsed.headers.count("host") == 0)
+	// 3. Host: required from HTTP/1.1 on (HTTP/1.0 does not need it), and never invalid.
+	bool hasHost = parsed.headers.count("host") > 0;
+	if ((!hasHost && parsed.version != "HTTP/1.0") || (hasHost && isBadHost(parsed.headers.at("host"))))
 	{
 		errorStatus = 400;
 		return ParseStatus::Error;
@@ -241,6 +320,7 @@ ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus
 		errorStatus = UNKNOWN_METHOD_STATUS;
 		return ParseStatus::Error;
 	}
+
 	// 4. Everything is right: fill req and remove the head from buffer.
 	// What is left in buffer came after the empty line.
 	req = parsed;

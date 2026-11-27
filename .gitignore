@@ -11,3 +11,4 @@ poll_echo
 # tests
 __pycache__/
 /config_dump
+/request_dump
