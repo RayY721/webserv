@@ -1,6 +1,7 @@
 // Test helper, not part of webserv: prints what the config layer reads,
 // so tests/test_config.py can check it.
 //   ./config_dump tokens <file>
+//   ./config_dump servers <file>
 
 #include <fstream>
 #include <iostream>
@@ -9,6 +10,7 @@
 
 #include "ConfigError.hpp"
 #include "ConfigLexer.hpp"
+#include "ConfigParser.hpp"
 
 static const char *typeName(Token::Type type)
 {
@@ -45,11 +47,31 @@ static void dumpTokens(const std::string &content)
 				  << '\t' << tokens[i].text << '\n';
 }
 
+static void dumpServers(const std::string &content)
+{
+	std::vector<ServerConfig> servers = parseConfig(tokenize(content));
+	for (std::size_t i = 0; i < servers.size(); ++i)
+	{
+		const ServerConfig &server = servers[i];
+		std::cout << "server\n";
+		for (std::size_t j = 0; j < server.listen.size(); ++j)
+			std::cout << "listen " << server.listen[j].address << ' '
+					  << server.listen[j].port << '\n';
+		std::cout << "root " << server.root << '\n';
+		std::cout << "index " << server.index << '\n';
+		std::map<int, std::string>::const_iterator it;
+		for (it = server.error_page.begin(); it != server.error_page.end(); ++it)
+			std::cout << "error_page " << it->first << ' ' << it->second << '\n';
+		std::cout << "client_max_body_size " << server.client_max_body_size << '\n';
+	}
+}
+
 int main(int argc, char **argv)
 {
-	if (argc != 3 || std::string(argv[1]) != "tokens")
+	std::string mode = argc == 3 ? argv[1] : "";
+	if (mode != "tokens" && mode != "servers")
 	{
-		std::cerr << "Usage: ./config_dump tokens <file>" << std::endl;
+		std::cerr << "Usage: ./config_dump tokens|servers <file>" << std::endl;
 		return 2;
 	}
 	std::string content;
@@ -60,7 +82,10 @@ int main(int argc, char **argv)
 	}
 	try
 	{
-		dumpTokens(content);
+		if (mode == "tokens")
+			dumpTokens(content);
+		else
+			dumpServers(content);
 	}
 	catch (const ConfigError &e)
 	{
