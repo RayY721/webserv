@@ -4,7 +4,7 @@
 #include "Listener.hpp"
 #include <vector>
 #include <map>
-#include <unistd.h>
+#include "EventLoop.hpp"
 
 int main(int argc, char **argv)
 {
@@ -45,12 +45,7 @@ int main(int argc, char **argv)
 		std::cout << "listening fd " << entry.first << " on port "
 			<< entry.second->listen[0].port << std::endl;
 
-	std::cout << "Press Enter to quit" << std::endl;
-	// TODO: A4: replace with the poll() loop. Temporary: keeps the listeners open for testing.
-	std::cin.get();
-
-	for (const auto &entry : listeners)
-		close(entry.first);
+	runEventLoop(listeners);
 
 	return 0;
 }

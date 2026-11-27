@@ -1,5 +1,5 @@
 #ifndef CLIENT_HPP
-# define CLIENT_HPP
+#define CLIENT_HPP
 
 #include <chrono>
 #include <cstddef>
@@ -34,48 +34,48 @@ enum class ClientState
 // 	clients.try_emplace(fd, fd, server);
 class Client
 {
-public:
-	using Clock = std::chrono::steady_clock;
+	public:
+		using Clock = std::chrono::steady_clock;
 
-	// server: the config of the listening socket that accepted this client.
-	Client(int fd, const ServerConfig* server);
-	~Client();
+		// server: the config of the listening socket that accepted this client.
+		Client(int fd, const ServerConfig* server);
+		~Client();
 
-	// One fd, one owner. A copy would close the socket twice, and the second close could hit another client's fd.
-	Client(const Client&) = delete;
-	Client& operator=(const Client&) = delete;
+		// One fd, one owner. A copy would close the socket twice, and the second close could hit another client's fd.
+		Client(const Client&) = delete;
+		Client& operator=(const Client&) = delete;
 
-	// The poll() events this client needs now, from its state:
-	// POLLIN while ReadingRequest, POLLOUT while WritingResponse, 0 otherwise.
-	// poll() reports POLLHUP and POLLERR whatever we ask for.
-	short pollEvents() const;
+		// The poll() events this client needs now, from its state:
+		// POLLIN while ReadingRequest, POLLOUT while WritingResponse, 0 otherwise.
+		// poll() reports POLLHUP and POLLERR whatever we ask for.
+		short pollEvents() const;
 
-	// Call after every recv() or send() on this socket that returned more than 0.
-	void touch();
-	// For the idle timeout (A6, 408).
-	bool isIdleLongerThan(std::chrono::seconds limit) const;
+		// Call after every recv() or send() on this socket that returned more than 0.
+		void touch();
+		// For the idle timeout (A6, 408).
+		bool isIdleLongerThan(std::chrono::seconds limit) const;
 
-	// Keep-alive: get ready for the next request on the same connection.
-	// Clears request, response, writeBuffer, bytesSent, cgi and closeAfterWrite,
-	// and sets the state to ReadingRequest. Keeps readBuffer: the bytes left in
-	// it may already be the start of the next request.
-	void resetForNextRequest();
+		// Keep-alive: get ready for the next request on the same connection.
+		// Clears request, response, writeBuffer, bytesSent, cgi and closeAfterWrite,
+		// and sets the state to ReadingRequest. Keeps readBuffer: the bytes left in
+		// it may already be the start of the next request.
+		void resetForNextRequest();
 
-	const int			fd;
-	const ServerConfig*	server;				// Not owned. Set at accept(), never changes.
-	ClientState			state = ClientState::ReadingRequest;
+		const int			fd;
+		const ServerConfig*	server;				// Not owned. Set at accept(), never changes.
+		ClientState			state = ClientState::ReadingRequest;
 
-	std::string			readBuffer;			// Bytes received, not yet used by the parser.
-	std::string			writeBuffer;		// Response bytes to send.
-	std::size_t			bytesSent = 0;		// Bytes of writeBuffer already sent.
-	Clock::time_point	lastActivity;		// Set by the constructor and touch().
+		std::string			readBuffer;			// Bytes received, not yet used by the parser.
+		std::string			writeBuffer;		// Response bytes to send.
+		std::size_t			bytesSent = 0;		// Bytes of writeBuffer already sent.
+		Clock::time_point	lastActivity;		// Set by the constructor and touch().
 
-	Request				request;
-	Response			response;
+		Request				request;
+		Response			response;
 
-	std::unique_ptr<CgiProcess> cgi;		// Empty when no CGI is running.
-	bool                closeAfterWrite = false;	// true: Closing after the response.
-													// false: keep-alive.
+		std::unique_ptr<CgiProcess> cgi;		// Empty when no CGI is running.
+		bool				closeAfterWrite = false;	// true: Closing after the response.
+														// false: keep-alive.
 };
 
 #endif

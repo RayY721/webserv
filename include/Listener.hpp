@@ -1,5 +1,5 @@
 #ifndef LISTENER_HPP
-# define LISTENER_HPP
+#define LISTENER_HPP
 
 #include "ServerConfig.hpp"
 #include <vector>
