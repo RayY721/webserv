@@ -1,5 +1,6 @@
 NAME = webserv
 DUMP = config_dump
+REQUEST_DUMP = request_dump                                    # NEW
 
 CXX = c++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude
@@ -14,6 +15,9 @@ OBJS = $(SRCS:.cpp=.o)
 DUMP_SRCS = tests/config_dump.cpp $(CONFIG_SRCS)
 DUMP_OBJS = $(DUMP_SRCS:.cpp=.o)
 
+REQUEST_DUMP_SRCS = tests/request_dump.cpp $(HTTP_SRCS)
+REQUEST_DUMP_OBJS = $(REQUEST_DUMP_SRCS:.cpp=.o)
+
 all: $(NAME)
 
 $(NAME): $(OBJS)
@@ -22,14 +26,17 @@ $(NAME): $(OBJS)
 $(DUMP): $(DUMP_OBJS)
 	$(CXX) $(CXXFLAGS) $(DUMP_OBJS) -o $(DUMP)
 
+$(REQUEST_DUMP): $(REQUEST_DUMP_OBJS)
+	$(CXX) $(CXXFLAGS) $(REQUEST_DUMP_OBJS) -o $(REQUEST_DUMP)
+
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) $(DUMP_OBJS)
+	rm -f $(OBJS) $(DUMP_OBJS) $(REQUEST_DUMP_OBJS)
 
 fclean: clean
-	rm -f $(NAME) $(DUMP)
+	rm -f $(NAME) $(DUMP) $(REQUEST_DUMP)
 
 re: fclean all
 
