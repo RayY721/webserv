@@ -86,8 +86,46 @@ CASES = [
     ("Accept twice", b"GET / HTTP/1.1\r\nHost: a\r\nAccept: x\r\nAccept: y\r\n\r\n"),
     ("header line of 9000 bytes", b"GET / HTTP/1.1\r\nHost: a\r\nX: " + b"a" * 9000 + b"\r\n\r\n"),
     ("head of 40 KB", b"GET / HTTP/1.1\r\nHost: a\r\n" + b"".join(b"X%d: %s\r\n" % (i, b"0" * 100) for i in range(400)) + b"\r\n"),
+	    # Added after the B4/B5 review: full URLs, versions, Host and lines without ':'.
+    ("full URL, '?' before any '/'", b"GET http://a?x=/b HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("http://?x (empty host)", b"GET http://?x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("http://:80/x (empty host)", b"GET http://:80/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("http://a:80/x", b"GET http://a:80/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("http://a:8x/x (bad port)", b"GET http://a:8x/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("http://a:80:80/x", b"GET http://a:80:80/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("http://[::1]:80/x", b"GET http://[::1]:80/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("http://[::1/x (no ']')", b"GET http://[::1/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("http://[a/b]/x", b"GET http://[a/b]/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("http://a..b/x", b"GET http://a..b/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("scheme h2", b"GET h2://a/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("scheme ht-tp", b"GET ht-tp://a/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("scheme h_t", b"GET h_t://a/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("http:/a/x", b"GET http:/a/x HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("'#' in the path", b"GET /a#b?c HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("'#' in the host of a full URL", b"GET http://a#b HTTP/1.1\r\nHost: a\r\n\r\n"),
+    ("HTTP/01.1", b"GET / HTTP/01.1\r\nHost: a\r\n\r\n"),
+    ("HTTP/02.0", b"GET / HTTP/02.0\r\nHost: a\r\n\r\n"),
+    ("HTTP/10.0", b"GET / HTTP/10.0\r\nHost: a\r\n\r\n"),
+    ("HTTP/1.0999", b"GET / HTTP/1.0999\r\nHost: a\r\n\r\n"),
+    ("HTTP/1.00 without Host", b"GET / HTTP/1.00\r\n\r\n"),
+    ("HTTP/1.01 without Host", b"GET / HTTP/1.01\r\n\r\n"),
+    ("Host .", b"GET / HTTP/1.1\r\nHost: .\r\n\r\n"),
+    ("Host a b", b"GET / HTTP/1.1\r\nHost: a b\r\n\r\n"),
+    ("Host with a tab inside", b"GET / HTTP/1.1\r\nHost: a\tb\r\n\r\n"),
+    ("Host with \\x01", b"GET / HTTP/1.1\r\nHost: a\x01b\r\n\r\n"),
+    ("Host with \\x80", b"GET / HTTP/1.1\r\nHost: a\x80b\r\n\r\n"),
+    ("'Host' without ':' (HTTP/1.0)", b"GET / HTTP/1.0\r\nHost\r\n\r\n"),
+    ("'host' without ':' + Host: a", b"GET / HTTP/1.1\r\nhost\r\nHost: a\r\n\r\n"),
+    ("'foo bar' without ':'", b"GET / HTTP/1.1\r\nHost: a\r\nfoo bar\r\n\r\n"),
+    ("'f@o' without ':'", b"GET / HTTP/1.1\r\nHost: a\r\nf@o\r\n\r\n"),
 ]
 
+# Every printable character inside the host of a full URL and inside the Host header,
+# so no character is left untested.
+for code in range(33, 127):
+    char = bytes([code])
+    CASES.append((f"URL host a{chr(code)}b", b"GET http://a" + char + b"b/x HTTP/1.1\r\nHost: z\r\n\r\n"))
+    CASES.append((f"Host a{chr(code)}b", b"GET / HTTP/1.1\r\nHost: a" + char + b"b\r\n\r\n"))
 
 def nginx_status(raw, port):
     with socket.create_connection(("127.0.0.1", port), timeout=3) as connection:
@@ -106,7 +144,7 @@ def parser_answer(raw):
     with tempfile.NamedTemporaryFile("wb") as request:
         request.write(raw)
         request.flush()
-        out = subprocess.run([str(DUMP), request.name], capture_output=True, text=True).stdout
+        out = subprocess.run([str(DUMP), request.name], capture_output=True, text=True, errors="replace").stdout
     first = out.splitlines()[0]
     return "done" if first == "done" else int(first.split()[1]) if first.startswith("error") else first
 

@@ -47,7 +47,7 @@ static bool isDigits(const std::string& text)
 }
 
 // The major number of "HTTP/<major>.<minor>", like NGINX:
-// 1 for HTTP/1.x, 2 for any higher major (HTTP/2.0, HTTP/12.1), 0 for HTTP/0.x,
+// 1 for HTTP/1.x, 2 for any higher major (HTTP/2.0, HTTP/12.1), 0 if the major starts with 0 (HTTP/0.9, HTTP/01.1)
 // and -1 if the text does not look like a version ("FOO", "http/1.1", "HTTP/1", "HTTP/1.1000").
 static int versionMajor(const std::string& version)
 {
@@ -58,17 +58,72 @@ static int versionMajor(const std::string& version)
 		return -1;
 	std::string major = version.substr(5, dot - 5);
 	std::string minor = version.substr(dot + 1);
-	if (!isDigits(major) || !isDigits(minor) || minor.size() > 3)
+	if (!isDigits(major) || !isDigits(minor))
 		return -1;
-	if (major.find_first_not_of('0') == std::string::npos)
+	// Leading zeros do not count ("0999" is 999). Higher than 999 is refused, like NGINX.
+	std::size_t firstDigit = minor.find_first_not_of('0');
+	if (firstDigit != std::string::npos && minor.size() - firstDigit > 3)
+		return -1;
+	// A major that starts with 0 ("0", "01") is refused with 400, like NGINX.
+	if (major[0] == '0')
 		return 0;
 	if (major == "1")
 		return 1;
 	return 2;
 }
 
+// True for "HTTP/1.0", "HTTP/1.00"...: the minor is only zeros.
+static bool versionMinorIsZero(const std::string& version)
+{
+	std::string minor = version.substr(version.find('.') + 1);
+	return minor.find_first_not_of('0') == std::string::npos;
+}
+
+// "http", "https", "h2"...: a letter, then letters, digits, '+', '-' or '.', like NGINX.
+static bool isScheme(const std::string& text)
+{
+	if (text.empty() || !std::isalpha(static_cast<unsigned char>(text[0])))
+		return false;
+	for (char c : text)
+		if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
+			return false;
+	return true;
+}
+
+// The host of a full URL, with its port if there is one, as NGINX accepts it:
+// a name ("a.b-c") or an address in brackets ("[::1]"), then maybe ':' and digits ("a:80").
+static bool isUrlHost(const std::string& text)
+{
+	std::size_t i = 0;
+	if (!text.empty() && text[0] == '[')
+	{
+		std::size_t close = text.find(']');
+		if (close == std::string::npos)
+			return false;
+		for (i = 1; i < close; i++)
+			if (!std::isalnum(static_cast<unsigned char>(text[i]))
+				&& std::string("!$&'()*+,-.:;=_~").find(text[i]) == std::string::npos)
+				return false;
+		i = close + 1;
+	}
+	else
+	{
+		while (i < text.size() && (std::isalnum(static_cast<unsigned char>(text[i]))
+				|| text[i] == '.' || text[i] == '-'))
+			i++;
+		if (i == 0 || text.substr(0, i).find("..") != std::string::npos)
+			return false;
+	}
+	if (i == text.size())
+		return true;
+	if (text[i] != ':')
+		return false;
+	return text.find_first_not_of("0123456789", i + 1) == std::string::npos;
+}
+
 // The target is a path ("/a?x=1"), or a full URL ("http://host/a?x=1"), which NGINX accepts too.
-// From a full URL only the part from the first '/' after the host is kept ("/" if there is none).
+// From a full URL only the part from the first '/' or '?' after the host is kept
+// ("/" if there is none, and "/?x=1" for "http://host?x=1").
 // Returns false for anything else ("index.html", "*", "http://").
 static bool targetToPath(const std::string& target, std::string& path)
 {
@@ -80,14 +135,19 @@ static bool targetToPath(const std::string& target, std::string& path)
 	std::size_t scheme = target.find("://");
 	if (scheme == std::string::npos || scheme == 0)
 		return false;
-	for (std::size_t i = 0; i < scheme; i++)
-		if (!std::isalpha(static_cast<unsigned char>(target[i])))
-			return false;
-	std::size_t host = scheme + 3;
-	if (host >= target.size() || target[host] == '/')
+	if (!isScheme(target.substr(0, scheme)))
 		return false;
-	std::size_t slash = target.find('/', host);
-	path = slash == std::string::npos ? "/" : target.substr(slash);
+	std::size_t host = scheme + 3;
+	// The host ends at the first '/' or '?' after it.
+	std::size_t end = target.find_first_of("/?", host);
+	if (!isUrlHost(target.substr(host, end - host)))
+		return false;
+	if (end == std::string::npos)
+		path = "/";
+	else if (target[end] == '?')
+		path = "/" + target.substr(end);	// "http://a?x=1" -> "/?x=1"
+	else
+		path = target.substr(end);
 	return true;
 }
 
@@ -130,6 +190,8 @@ bool parseRequestLine(const std::string& line, Request& req)
 	std::string target;
 	if (!targetToPath(parts[1], target))
 		return false;
+	// Everything from '#' on is for the browser, not the server: NGINX drops it.
+	target = target.substr(0, target.find('#'));
 	// HTTP/0.x is refused here (400). HTTP/2.0 and higher is well written: 505 comes later.
 	if (versionMajor(version) < 1)
 		return false;
@@ -200,19 +262,19 @@ static bool mustBeUnique(const std::string& name)
 }
 
 // "Host: localhost" -> req.headers["host"] = "localhost". Like NGINX:
-// - a line with no ':' is ignored;
+// - a line with no ':' is a header with an empty value ("Host" alone is an empty Host: 400);
 // - a name with other characters than letters, digits and '-' ("X(y", "X_Y", "X.Y") is ignored;
 // - an empty name, a space, tab or control character in the name ("Host : a"), a '\0' or '\r'
 //   in the value, or a second Host, Content-Length or Transfer-Encoding gives false (400).
 static bool parseHeaderLine(const std::string& line, Request& req)
 {
 	std::size_t colon = line.find(':');
-	if (colon == std::string::npos)
-		return true;
 	std::string name = line.substr(0, colon);
 	if (name.empty() || name.find(' ') != std::string::npos || hasControlChar(name))
 		return false;
-	std::string value = trim(line.substr(colon + 1));
+	std::string value;		// Empty if the line has no ':'.
+	if (colon != std::string::npos)
+		value = trim(line.substr(colon + 1));
 	if (value.find('\0') != std::string::npos || value.find('\r') != std::string::npos)
 		return false;
 	name = toLower(name);
@@ -225,10 +287,12 @@ static bool parseHeaderLine(const std::string& line, Request& req)
 	return true;
 }
 
-// A Host value NGINX refuses with 400: empty, or with a '/' or "..".
+// A Host value NGINX refuses with 400: empty, ".", with a space or a control character
+// (a tab included), with a '/', or with "..".
 static bool isBadHost(const std::string& host)
 {
-	return host.empty() || host.find('/') != std::string::npos
+	return host.empty() || host == "." || host.find(' ') != std::string::npos
+		|| hasControlChar(host) || host.find('/') != std::string::npos
 		|| host.find("..") != std::string::npos;
 }
 
@@ -296,6 +360,12 @@ ParseStatus parseRequestHead(std::string& buffer, Request& req, int& errorStatus
 		errorStatus = 505;
 		return ParseStatus::Error;
 	}
+	// From here the version is HTTP/1.x. Keep only "HTTP/1.0" or "HTTP/1.1", like NGINX:
+	// "HTTP/1.00" is HTTP/1.0, and "HTTP/1.5" is treated as HTTP/1.1.
+	if (versionMinorIsZero(parsed.version))
+		parsed.version = "HTTP/1.0";
+	else
+		parsed.version = "HTTP/1.1";
 	for (std::size_t i = 1; i < lines.size(); i++)
 	{
 		if (!parseHeaderLine(lines[i], parsed))

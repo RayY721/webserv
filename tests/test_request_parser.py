@@ -53,9 +53,15 @@ def test_accepted_like_nginx():
         b"GET / HTTP/1.0\r\n\r\n",                          # HTTP/1.0 needs no Host
         b"GET / HTTP/1.5\r\nHost: a\r\n\r\n",               # any HTTP/1.x
         b"GET http://a/b HTTP/1.1\r\nHost: a\r\n\r\n",      # full URL
-        b"GET / HTTP/1.1\r\nHost: a\r\nBroken\r\n\r\n",     # line without ':' is ignored
+        b"GET / HTTP/1.1\r\nHost: a\r\nBroken\r\n\r\n",     # line without ':': header with empty value
         b"GET / HTTP/1.1\r\nHost: a\r\nX(y: 1\r\n\r\n",     # odd name is ignored
         b"GET / HTTP/1.1\r\nHost: a\r\nX: a\x01b\r\n\r\n",  # control char in a value
+		b"GET http://a:80/x HTTP/1.1\r\nHost: a\r\n\r\n",   # full URL with a port
+        b"GET http://[::1]/x HTTP/1.1\r\nHost: a\r\n\r\n",  # full URL with an IPv6 address
+        b"GET h2://a/x HTTP/1.1\r\nHost: a\r\n\r\n",        # scheme with a digit
+        b"GET / HTTP/1.0999\r\nHost: a\r\n\r\n",            # minor 999 (leading zeros do not count)
+        b"GET / HTTP/1.00\r\n\r\n",                         # HTTP/1.00 is HTTP/1.0: no Host needed
+        b"GET / HTTP/1.1\r\nHost: a@b\r\n\r\n",             # the Host header accepts '@'
     ]:
         assert parse(raw)[0] == "done", raw
 
@@ -64,6 +70,22 @@ def test_full_url_keeps_only_the_path():
     lines = parse(b"GET http://a/b?x=1 HTTP/1.1\r\nHost: a\r\n\r\n")
     assert "path /b" in lines and "query x=1" in lines
 
+def test_path_and_query_like_nginx():
+    for target, path, query in [
+        (b"http://a?x=/b", "/", "x=/b"),    # the host ends at '?' too
+        (b"http://a?x=1", "/", "x=1"),
+        (b"http://a/p?x=1", "/p", "x=1"),
+        (b"/a#b", "/a", ""),                # everything from '#' on is dropped
+        (b"/a?x#y", "/a", "x"),
+        (b"/a#b?c", "/a", ""),
+    ]:
+        lines = parse(b"GET " + target + b" HTTP/1.1\r\nHost: a\r\n\r\n")
+        assert f"path {path}" in lines and f"query {query}" in lines, target
+
+
+def test_version_is_kept_as_1_0_or_1_1():
+    assert "version HTTP/1.0" in parse(b"GET / HTTP/1.00\r\n\r\n")
+    assert "version HTTP/1.1" in parse(b"GET / HTTP/1.5\r\nHost: a\r\n\r\n")
 
 def test_400():
     for raw in [
@@ -85,6 +107,21 @@ def test_400():
         b"GET / HTTP/1.1\r\nHost : a\r\n\r\n",               # space before ':'
         b"GET / HTTP/1.1\r\nHost: a\r\nX: a\0b\r\n\r\n",     # \0 in a value
         b"GET / HTTP/1.1\r\nHost: a\r\nX: " + b"a" * 9000 + b"\r\n\r\n",  # header over 8 KB
+		b"GET http://?x HTTP/1.1\r\nHost: a\r\n\r\n",         # full URL with an empty host
+        b"GET http://a@b/ HTTP/1.1\r\nHost: a\r\n\r\n",       # '@' in the host of a full URL
+        b"GET http://a#b HTTP/1.1\r\nHost: a\r\n\r\n",        # '#' in the host of a full URL
+        b"GET http://a:8x/x HTTP/1.1\r\nHost: a\r\n\r\n",     # port that is not a number
+        b"GET http://[::1/x HTTP/1.1\r\nHost: a\r\n\r\n",     # IPv6 address without ']'
+        b"GET h_t://a/x HTTP/1.1\r\nHost: a\r\n\r\n",         # '_' in the scheme
+        b"GET / HTTP/01.1\r\nHost: a\r\n\r\n",                # major starting with 0
+        b"GET / HTTP/1.1000\r\nHost: a\r\n\r\n",              # minor over 999
+        b"GET / HTTP/1.01\r\n\r\n",                         # HTTP/1.01 is HTTP/1.1: needs Host
+        b"GET / HTTP/1.1\r\nHost: .\r\n\r\n",
+        b"GET / HTTP/1.1\r\nHost: a b\r\n\r\n",              # space inside Host
+        b"GET / HTTP/1.1\r\nHost: a\tb\r\n\r\n",             # tab inside Host
+        b"GET / HTTP/1.0\r\nHost\r\n\r\n",                   # 'Host' without ':' is an empty Host
+        b"GET / HTTP/1.1\r\nhost\r\nHost: a\r\n\r\n",        # ... and counts as a second Host
+        b"GET / HTTP/1.1\r\nHost: a\r\nfoo bar\r\n\r\n",     # line without ':' with a space
     ]:
         assert parse(raw) == ["error 400"], raw
 

@@ -15,8 +15,8 @@ OBJS = $(SRCS:.cpp=.o)
 DUMP_SRCS = tests/config_dump.cpp $(CONFIG_SRCS)
 DUMP_OBJS = $(DUMP_SRCS:.cpp=.o)
 
-REQUEST_DUMP_SRCS = tests/request_dump.cpp $(HTTP_SRCS)       # NEW
-REQUEST_DUMP_OBJS = $(REQUEST_DUMP_SRCS:.cpp=.o)               # NEW
+REQUEST_DUMP_SRCS = tests/request_dump.cpp $(HTTP_SRCS)
+REQUEST_DUMP_OBJS = $(REQUEST_DUMP_SRCS:.cpp=.o)
 
 all: $(NAME)
 
@@ -26,7 +26,7 @@ $(NAME): $(OBJS)
 $(DUMP): $(DUMP_OBJS)
 	$(CXX) $(CXXFLAGS) $(DUMP_OBJS) -o $(DUMP)
 
-$(REQUEST_DUMP): $(REQUEST_DUMP_OBJS)                          # NEW
+$(REQUEST_DUMP): $(REQUEST_DUMP_OBJS)
 	$(CXX) $(CXXFLAGS) $(REQUEST_DUMP_OBJS) -o $(REQUEST_DUMP)
 
 %.o: %.cpp
